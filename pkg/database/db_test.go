@@ -281,6 +281,44 @@ func TestGetTXTForDomain(t *testing.T) {
 	}
 }
 
+func TestGetTXTForDomainSkipsExtraEmptyRows(t *testing.T) {
+	DB := fakeDB()
+	reg, err := DB.Register(acmedns.Cidrslice{})
+	if err != nil {
+		t.Fatalf("Registration failed: %v", err)
+	}
+
+	txtval := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	reg.Value = txtval
+	if err := DB.Update(reg.ACMETxtPost); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	backend := DB.GetBackend()
+	for i := 0; i < 2; i++ {
+		_, err = backend.Exec(
+			"INSERT INTO txt (Subdomain, Value, LastUpdate) VALUES (?, '', 0)",
+			reg.Subdomain,
+		)
+		if err != nil {
+			t.Fatalf("Failed to insert orphan txt row: %v", err)
+		}
+	}
+
+	txts, err := DB.GetTXTForDomain(reg.Subdomain)
+	if err != nil {
+		t.Fatalf("GetTXTForDomain failed: %v", err)
+	}
+	if len(txts) == 0 {
+		t.Fatal("Expected non-empty TXT values despite orphan rows")
+	}
+	for _, v := range txts {
+		if v == "" {
+			t.Error("GetTXTForDomain returned an empty value")
+		}
+	}
+}
+
 func TestUpdate(t *testing.T) {
 	DB := fakeDB()
 	// Create  reg to refer to
